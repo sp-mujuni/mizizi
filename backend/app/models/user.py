@@ -48,6 +48,11 @@ class User(Base):
         cascade="all, delete-orphan",
         foreign_keys="ReviewerApplication.user_id",
     )
+    creator_key_requests: Mapped[list["CreatorKeyRequest"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="CreatorKeyRequest.user_id",
+    )
 
 
 class UserLanguage(Base):
@@ -112,3 +117,4 @@ from app.models.community import Community  # noqa: E402
 from app.models.cultural_object import CulturalObject  # noqa: E402
 from app.models.language import Language  # noqa: E402
 from app.models.place import Place  # noqa: E402
+from app.models.creator_key import CreatorKeyRequest  # noqa: E402
