@@ -146,13 +146,18 @@ def publish_check(
     return {"object_id": str(obj.id), "requirements": cultural_object_service.publish_requirements(db, obj)}
 
 
-@router.delete("/{object_id}", response_model=CulturalObjectRead)
-def withdraw_object(
+@router.delete("/{object_id}", response_model=dict)
+def delete_object(
     object_id: uuid.UUID,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Soft-withdraw: the object is never physically deleted."""
-    obj = cultural_object_service.get_object_or_404(db, object_id)
-    _require_manage(user, obj)
-    return cultural_object_service.withdraw_object(db, object_id, actor=user.email)
+    """Permanently delete one of your own Cultural Objects.
+
+    This is the archive's only destructive operation. The original media is
+    removed from storage and every trace (provenance, permissions, consents,
+    transcriptions, translations, derivatives) is destroyed with it. Only the
+    object's creator — or an administrator enforcing policy — can do this.
+    """
+    code = cultural_object_service.delete_object(db, object_id, actor=user.email, user=user)
+    return {"ok": True, "detail": f"Object {code} permanently deleted.", "object_code": code}
