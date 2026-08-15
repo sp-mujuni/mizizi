@@ -113,7 +113,28 @@ def stream_media(object_id: uuid.UUID, asset_id: uuid.UUID, db: Session, storage
         data = storage.get(asset.storage_key)
     except Exception as exc:  # StorageError / botocore ClientError
         raise HTTPException(status_code=404, detail="Media bytes not found in storage") from exc
-    return data, asset.mime_type
+    return data, _playable_mime(asset)
+
+
+_PLAYABLE_MIME = {
+    MediaType.AUDIO: "audio/webm",
+    MediaType.VIDEO: "video/webm",
+    MediaType.IMAGE: "image/jpeg",
+}
+
+
+def _playable_mime(asset: MediaAsset) -> str | None:
+    """Return a content type the browser can render.
+
+    ``mime_type`` is trusted when it is a concrete audio/video/image type.
+    Uploads that arrive as ``application/octet-stream`` (e.g. a ``.wav`` or
+    ``.mp3``) fall back to a canonical type derived from the detected
+    ``media_type`` so the player will accept the stream.
+    """
+    stored = (asset.mime_type or "").strip().lower()
+    if any(stored.startswith(prefix) for prefix in ("audio/", "video/", "image/")):
+        return asset.mime_type
+    return _PLAYABLE_MIME.get(MediaType(asset.media_type)) if asset.media_type else None
 
 
 def _safe_sync_file_for_upload(path: str, content_type: str) -> UploadedFile:
