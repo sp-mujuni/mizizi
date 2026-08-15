@@ -36,6 +36,16 @@ class Settings(BaseSettings):
     storage_region: str = "us-east-1"
     storage_public_base_url: str | None = None
 
+    # Email
+    # mail_backend: "console" (dev — prints/logs instead of sending) | "smtp"
+    mail_backend: str = "console"
+    mail_from: str = "Mizizi <no-reply@mizizi.org>"
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_use_tls: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:
