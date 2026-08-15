@@ -1,10 +1,15 @@
 /** Mizizi API client. */
 
 import type {
+  AdminObjectList,
+  AdminUserList,
   AuthResponse,
   Community,
   CreatedObject,
+  CreatorKey,
+  CreatorKeyRequest,
   CulturalObject,
+  DeleteResponse,
   Derivative,
   Language,
   ObjectType,
@@ -67,6 +72,18 @@ export const api = {
   getToken,
   setToken,
   clearToken,
+
+  /**
+   * Build a playable media URL. The browser requests media through a plain
+   * `<audio>`/`<video>` src, which cannot carry the Authorization header, so
+   * the session token is passed as a query parameter when signed in. This
+   * lets reviewers listen to objects in the review pipeline.
+   */
+  mediaUrl: (objectId: string, assetId: string) => {
+    const token = getToken();
+    const qs = token ? `?token=${encodeURIComponent(token)}` : "";
+    return `${API_BASE}/cultural-objects/${objectId}/media/${assetId}${qs}`;
+  },
 
   // Reference data
   languages: () => request<Language[]>("/languages"),
@@ -198,7 +215,41 @@ export const api = {
     request<PublishCheck>(
       `/cultural-objects/${objectId}/publish-check`
     ),
-  withdraw: (objectId: string) => request(`/cultural-objects/${objectId}`, { method: "DELETE" }),
+  deleteObject: (objectId: string) =>
+    request<{ ok: boolean; detail: string; object_code?: string }>(`/cultural-objects/${objectId}`, {
+      method: "DELETE",
+    }),
+
+  // Creator-key recovery
+  requestCreatorKey: (objectId: string) =>
+    request<CreatorKeyRequest>("/creator-keys/requests", {
+      method: "POST",
+      body: JSON.stringify({ object_id: objectId }),
+    }),
+  myKeyRequests: () => request<CreatorKeyRequest[]>("/creator-keys/requests"),
+
+  // Admin console
+  admin: {
+    users: () => request<AdminUserList>("/admin/users"),
+    objects: (params: Record<string, string | number | undefined> = {}) => {
+      const qs = new URLSearchParams(
+        Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][]
+      ).toString();
+      return request<AdminObjectList>(`/admin/objects${qs ? `?${qs}` : ""}`);
+    },
+    deleteObject: (id: string) =>
+      request<DeleteResponse>(`/admin/objects/${id}`, { method: "DELETE" }),
+    creatorKeys: () => request<CreatorKey[]>("/admin/creator-keys"),
+    keyRequests: () => request<CreatorKeyRequest[]>("/admin/creator-key-requests"),
+    issueKey: (id: string) =>
+      request<CreatorKeyRequest>(`/admin/creator-key-requests/${id}/issue`, {
+        method: "POST",
+      }),
+    declineKey: (id: string) =>
+      request<CreatorKeyRequest>(`/admin/creator-key-requests/${id}/decline`, {
+        method: "POST",
+      }),
+  },
 
   // Search
   search: (q: string) => request<SearchResponse>(`/search?q=${encodeURIComponent(q)}`),
