@@ -1,6 +1,6 @@
 """FastAPI dependencies for authentication and authorization."""
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,24 @@ def get_optional_user(
     if not token:
         return None
     return auth_service.get_user_from_token(db, token)
+
+
+def get_optional_user_anywhere(
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    token: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Resolve a user from either the ``Authorization`` header or a ``?token=``
+    query parameter.
+
+    Media streams (``<audio>``/``<video>``) are requested by the browser as a
+    plain URL, so the JWT cannot be sent as a header. Only routes that must
+    authorize non-fetch media playback should use this dependency.
+    """
+    raw = creds.credentials if creds is not None else token
+    if not raw:
+        return None
+    return auth_service.get_user_from_token(db, raw)
 
 
 def get_current_user(
