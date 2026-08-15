@@ -8,6 +8,7 @@ from app.models.collection import Collection, CollectionItem
 from app.models.community import Community
 from app.models.consent import Consent
 from app.models.contributor import Contributor
+from app.models.creator_key import CreatorKeyEscrow, CreatorKeyRequest
 from app.models.cultural_context import CulturalContext
 from app.models.cultural_object import CulturalObject
 from app.models.derivative import Derivative
@@ -51,6 +52,8 @@ __all__ = [
     "Consent",
     "ConsentType",
     "Contributor",
+    "CreatorKeyEscrow",
+    "CreatorKeyRequest",
     "CulturalContext",
     "CulturalObject",
     "CulturalObjectTag",
