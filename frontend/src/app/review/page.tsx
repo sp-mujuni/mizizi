@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, API_BASE } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { CulturalObject } from "@/lib/types";
 
@@ -262,10 +262,11 @@ export default function ReviewPage() {
                 </Link>
               </div>
 
-              {detail.media_assets[0]?.mime_type?.startsWith("audio") && (
+              {detail.media_assets[0]?.media_type === "audio" && (
                 <audio
                   controls
-                  src={`${API_BASE}/cultural-objects/${detail.id}/media/${detail.media_assets[0].id}`}
+                  preload="metadata"
+                  src={api.mediaUrl(detail.id, detail.media_assets[0].id)}
                   className="mb-5 w-full"
                 />
               )}
