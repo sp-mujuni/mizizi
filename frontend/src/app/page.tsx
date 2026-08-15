@@ -17,26 +17,23 @@ export default function HomePage() {
     <div>
       <section className="border-b border-stone-200 bg-gradient-to-b from-brand/10 to-background">
         <div className="mx-auto max-w-6xl px-4 py-20 text-center sm:py-28">
-          <p className="text-sm font-semibold uppercase tracking-widest text-accent">
-            Mizizi · Swahili for &ldquo;roots&rdquo;
-          </p>
           <h1 className="mx-auto mt-4 max-w-3xl font-serif text-4xl font-bold leading-tight text-brand-dark sm:text-6xl">
             What did your grandmother tell you?
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-stone-600">
-            Mizizi preserves the stories, songs, riddles and proverbs of African oral culture —
+            Preserve the stories, songs, riddles and proverbs of African oral culture —
             the original recordings, never altered — so the next generation can still hear them.
           </p>
-          <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <div className="mt-10 flex w-full flex-col items-stretch justify-center gap-3 sm:w-auto sm:flex-row sm:items-center">
             <Link
               href="/record"
-              className="w-64 rounded-lg bg-brand px-6 py-3 text-center font-semibold text-white shadow transition hover:bg-brand-dark"
+              className="rounded-lg bg-brand px-6 py-3 text-center font-semibold text-white shadow transition hover:bg-brand-dark sm:w-64"
             >
               Tell us a story
             </Link>
             <Link
               href="/archive"
-              className="w-64 rounded-lg border border-brand/30 bg-white px-6 py-3 text-center font-semibold text-brand-dark transition hover:bg-brand/10"
+              className="rounded-lg border border-brand/30 bg-white px-6 py-3 text-center font-semibold text-brand-dark transition hover:bg-brand/10 sm:w-64"
             >
               Explore Uganda&apos;s stories
             </Link>
