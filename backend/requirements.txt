@@ -1,0 +1,26 @@
+# --- Web framework ---
+fastapi>=0.115
+uvicorn[standard]>=0.34
+python-multipart>=0.0.20
+
+# --- Database ---
+sqlalchemy>=2.0.36
+psycopg[binary]>=3.2
+alembic>=1.14
+pgvector>=0.3.6
+
+# --- Validation & settings ---
+pydantic>=2.10
+pydantic-settings>=2.7
+email-validator>=2.2
+
+# --- Storage (S3-compatible) ---
+boto3>=1.35
+
+# --- Util ---
+python-dotenv>=1.0
+python-magic>=0.4.27
+
+# --- Testing ---
+pytest>=8.3
+httpx>=0.28
