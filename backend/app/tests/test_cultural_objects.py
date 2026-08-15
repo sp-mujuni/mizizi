@@ -85,6 +85,124 @@ def test_media_is_immutable_and_streamable(client, reference_ids, member):
     assert stream.content == b"immutable-bytes"
 
 
+def _upload_audio(client, obj, member, data=b"playable-audio-bytes"):
+    return client.post(
+        f"/api/v1/cultural-objects/{obj['id']}/media",
+        files={"file": ("recording.webm", data, "audio/webm")},
+        headers=member["headers"],
+    ).json()
+
+
+def test_reviewer_can_stream_review_media_via_query_token(client, reference_ids, member, reviewer):
+    """The review player must be able to hear the audio: the browser fetches a
+    plain URL, so the reviewer's token is passed as a query parameter."""
+    obj = _create_object(client, reference_ids, member["headers"])
+    upload = _upload_audio(client, obj, member)
+    assert obj["status"] == "draft"
+
+    stream = client.get(
+        f"/api/v1/cultural-objects/{obj['id']}/media/{upload['id']}?token={reviewer['token']}"
+    )
+    assert stream.status_code == 200, stream.text
+    assert stream.content == b"playable-audio-bytes"
+    assert stream.headers["cache-control"] == "private, no-store"
+
+
+def test_creator_can_stream_own_review_media_via_query_token(client, reference_ids, member):
+    obj = _create_object(client, reference_ids, member["headers"])
+    upload = _upload_audio(client, obj, member)
+    stream = client.get(
+        f"/api/v1/cultural-objects/{obj['id']}/media/{upload['id']}?token={member['token']}"
+    )
+    assert stream.status_code == 200, stream.text
+
+
+def test_anonymous_cannot_stream_review_media(client, reference_ids, member):
+    obj = _create_object(client, reference_ids, member["headers"])
+    upload = _upload_audio(client, obj, member)
+    stream = client.get(f"/api/v1/cultural-objects/{obj['id']}/media/{upload['id']}")
+    assert stream.status_code == 403
+
+
+def test_other_member_cannot_stream_review_media(client, reference_ids, member):
+    obj = _create_object(client, reference_ids, member["headers"])
+    upload = _upload_audio(client, obj, member)
+    other = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "other-member@example.com",
+            "password": "password123",
+            "language_ids": [reference_ids["luganda"]],
+            "place_ids": [reference_ids["place"]],
+            "community_ids": [reference_ids["community"]],
+        },
+    )
+    other_token = other.json()["access_token"]
+    stream = client.get(
+        f"/api/v1/cultural-objects/{obj['id']}/media/{upload['id']}?token={other_token}"
+    )
+    assert stream.status_code == 403
+
+
+def test_anonymous_can_stream_published_media(client, reference_ids, member):
+    obj = _create_object(client, reference_ids, member["headers"])
+    upload = _upload_audio(client, obj, member)
+    _publish(client, reference_ids, member, obj)
+
+    stream = client.get(f"/api/v1/cultural-objects/{obj['id']}/media/{upload['id']}")
+    assert stream.status_code == 200, stream.text
+    assert stream.content == b"playable-audio-bytes"
+    assert stream.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+def test_media_range_requests_return_partial_content(client, reference_ids, member):
+    obj = _create_object(client, reference_ids, member["headers"])
+    data = b"0123456789abcdefghij"  # 20 bytes
+    upload = _upload_audio(client, obj, member, data=data)
+    url = f"/api/v1/cultural-objects/{obj['id']}/media/{upload['id']}?token={member['token']}"
+
+    stream = client.get(url, headers={"Range": "bytes=5-9"})
+    assert stream.status_code == 206
+    assert stream.content == b"56789"
+    assert stream.headers["content-range"] == "bytes 5-9/20"
+    assert stream.headers["accept-ranges"] == "bytes"
+    assert stream.headers["content-length"] == "5"
+
+
+def test_media_open_ended_range_and_invalid_range(client, reference_ids, member):
+    obj = _create_object(client, reference_ids, member["headers"])
+    upload = _upload_audio(client, obj, member, data=b"0123456789")
+    url = f"/api/v1/cultural-objects/{obj['id']}/media/{upload['id']}?token={member['token']}"
+
+    suffix = client.get(url, headers={"Range": "bytes=-4"})
+    assert suffix.status_code == 206
+    assert suffix.content == b"6789"
+    assert suffix.headers["content-range"] == "bytes 6-9/10"
+
+    invalid = client.get(url, headers={"Range": "bytes=50-60"})
+    assert invalid.status_code == 416
+    assert invalid.headers["content-range"] == "bytes */10"
+
+
+def test_octet_stream_audio_upload_gets_playable_content_type(client, reference_ids, member):
+    """A .wav uploaded with a generic content type must still be served as
+    audio so the browser will play it."""
+    obj = _create_object(client, reference_ids, member["headers"])
+    upload = client.post(
+        f"/api/v1/cultural-objects/{obj['id']}/media",
+        files={"file": ("recording.wav", b"RIFF-fake-wav", "application/octet-stream")},
+        headers=member["headers"],
+    ).json()
+    assert upload["media_type"] == "audio"
+    stream = client.get(f"/api/v1/cultural-objects/{obj['id']}/media/{upload['id']}")
+    assert stream.status_code == 403  # still gated while in review
+    stream = client.get(
+        f"/api/v1/cultural-objects/{obj['id']}/media/{upload['id']}?token={member['token']}"
+    )
+    assert stream.status_code == 200
+    assert stream.headers["content-type"].startswith("audio/")
+
+
 def test_transcription_and_human_review(client, reference_ids, member):
     obj = _create_object(client, reference_ids, member["headers"])
     tr = client.post(
@@ -104,6 +222,37 @@ def test_transcription_and_human_review(client, reference_ids, member):
 
     detail = _detail(client, obj["id"], member)
     assert any(e["event_type"] == "transcription_reviewed" for e in detail["provenance_events"])
+    # The object-level rollup must follow the transcription review.
+    assert detail["verification_status"] == "human_reviewed"
+
+
+def test_object_verification_status_rolls_up_with_human_review(client, reference_ids, member):
+    obj = _create_object(client, reference_ids, member["headers"])
+    client.post(
+        f"/api/v1/cultural-objects/{obj['id']}/transcriptions",
+        json={"text": "AI draft.", "verification_status": "ai_processed"},
+        headers=member["headers"],
+    )
+    detail = _detail(client, obj["id"], member)
+    assert detail["verification_status"] == "ai_processed"
+
+    client.patch(
+        f"/api/v1/cultural-objects/{obj['id']}/transcriptions/{detail['transcriptions'][0]['id']}",
+        json={"verification_status": "human_reviewed"},
+        headers=member["headers"],
+    )
+    detail = _detail(client, obj["id"], member)
+    assert detail["verification_status"] == "human_reviewed"
+
+
+def test_published_object_never_reports_unverified(client, reference_ids, member):
+    """Regression: published objects used to display 'Verified: unverified'."""
+    obj = _create_object(client, reference_ids, member["headers"])
+    _upload_audio(client, obj, member)
+    _publish(client, reference_ids, member, obj)
+    detail = _detail(client, obj["id"], member)
+    assert detail["status"] == "published"
+    assert detail["verification_status"] == "human_reviewed"
 
 
 def test_translation_linked_to_source(client, reference_ids, member):
@@ -236,7 +385,11 @@ def test_publish_check_reports_each_requirement(client, reference_ids, member):
 
 def test_withdraw_is_soft_delete(client, reference_ids, member):
     obj = _create_object(client, reference_ids, member["headers"])
-    resp = client.delete(f"/api/v1/cultural-objects/{obj['id']}", headers=member["headers"])
+    resp = client.patch(
+        f"/api/v1/cultural-objects/{obj['id']}/status",
+        json={"status": "withdrawn"},
+        headers=member["headers"],
+    )
     assert resp.status_code == 200
     detail = _detail(client, obj["id"], member)
     assert detail["status"] == "withdrawn"
@@ -439,7 +592,11 @@ def test_non_public_objects_hidden_from_archive(client, reference_ids, member, r
         headers=member["headers"],
     )
     withdrawn = _create_object(client, reference_ids, member["headers"], title="Withdrawn One")
-    client.delete(f"/api/v1/cultural-objects/{withdrawn['id']}", headers=member["headers"])
+    client.patch(
+        f"/api/v1/cultural-objects/{withdrawn['id']}/status",
+        json={"status": "withdrawn"},
+        headers=member["headers"],
+    )
     verified_no_access = _create_object(
         client, reference_ids, member["headers"], title="Verified But Private"
     )
@@ -521,11 +678,31 @@ def test_creator_edit_must_stay_in_background(client, reference_ids, member):
     assert "not in your cultural background" in resp.json()["detail"]
 
 
-def test_creator_can_withdraw_own_object(client, reference_ids, member):
+def test_creator_can_delete_own_object(client, reference_ids, member):
+    """A creator can permanently delete their own object — the archive's only
+    destructive operation. The object and all its traces disappear."""
     obj = _create_object(client, reference_ids, member["headers"])
     resp = client.delete(f"/api/v1/cultural-objects/{obj['id']}", headers=member["headers"])
     assert resp.status_code == 200, resp.text
-    assert resp.json()["status"] == "withdrawn"
-    # The object still exists (soft delete) and only the creator/reviewer can see it.
-    detail = _detail(client, obj["id"], member)
-    assert detail["status"] == "withdrawn"
+    assert resp.json()["ok"] is True
+    # The object is truly gone, not merely withdrawn.
+    gone = client.get(f"/api/v1/cultural-objects/{obj['id']}", headers=member["headers"])
+    assert gone.status_code == 404
+    mine = client.get("/api/v1/auth/me/objects", headers=member["headers"]).json()
+    assert not any(o["id"] == obj["id"] for o in mine)
+
+
+def test_delete_requires_creator_or_admin(client, reference_ids, member, reviewer):
+    """Reviewers cannot permanently delete; the creator's other accounts cannot
+    delete an object they don't own."""
+    obj = _create_object(client, reference_ids, member["headers"])
+
+    # A reviewer cannot hard-delete.
+    blocked = client.delete(
+        f"/api/v1/cultural-objects/{obj['id']}", headers=reviewer["headers"]
+    )
+    assert blocked.status_code == 403
+
+    # Anonymous cannot delete.
+    anon = client.delete(f"/api/v1/cultural-objects/{obj['id']}")
+    assert anon.status_code == 401
