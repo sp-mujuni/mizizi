@@ -2,6 +2,7 @@
 derivative and relationship sub-resources of a Cultural Object."""
 
 import hashlib
+import re
 import uuid
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core import access
 from app.core.database import get_db
-from app.core.deps import get_current_user, get_optional_user
+from app.core.deps import get_current_user, get_optional_user, get_optional_user_anywhere
 from app.core.storage import get_storage
 from app.models import (
     Consent,
@@ -137,14 +138,73 @@ async def upload_media(
 def get_media(
     object_id: uuid.UUID,
     asset_id: uuid.UUID,
+    range_header: str | None = Header(default=None, alias="Range"),
     db: Session = Depends(get_db),
-    user: User | None = Depends(get_optional_user),
+    user: User | None = Depends(get_optional_user_anywhere),
 ):
+    """Stream a media asset with HTTP Range support.
+
+    Browsers fetch media through a plain ``<audio>``/``<video>`` URL, so the
+    session token is accepted via a ``?token=`` query parameter as well as the
+    ``Authorization`` header. Requests for published objects are anonymous;
+    requests for objects in the review pipeline require the creator's or a
+    reviewer/admin's token.
+    """
     obj = _require_object(db, object_id)
     _require_view(user, obj)
     data, mime = media_service.stream_media(object_id, asset_id, db, storage=get_storage())
-    headers = {"Cache-Control": "public, max-age=31536000, immutable"}
-    return Response(content=data, media_type=mime or "application/octet-stream", headers=headers)
+    content_type = mime or "application/octet-stream"
+    cache = (
+        "public, max-age=31536000, immutable"
+        if obj.status in access.PUBLIC_STATUSES
+        else "private, no-store"
+    )
+    return _media_response(data, content_type, range_header, cache)
+
+
+_RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
+
+
+def _media_response(
+    data: bytes, content_type: str, range_header: str | None, cache_control: str
+) -> Response:
+    """Build a media response honouring a single-byte-range request.
+
+    Full responses are ``200 OK``; range requests return ``206 Partial
+    Content`` with ``Content-Range`` so the browser can seek; invalid ranges
+    return ``416 Range Not Satisfiable``.
+    """
+    size = len(data)
+    headers = {"Accept-Ranges": "bytes", "Cache-Control": cache_control}
+
+    if range_header:
+        match = _RANGE_RE.match(range_header.strip())
+        if match:
+            start_s, end_s = match.groups()
+            if start_s == "":
+                start = max(0, size - int(end_s or 0))
+                end = size - 1
+            else:
+                start = int(start_s)
+                end = int(end_s) if end_s else size - 1
+                end = min(end, size - 1)
+            if start < 0 or start > end or start >= size:
+                return Response(
+                    status_code=416,
+                    media_type=content_type,
+                    headers={"Content-Range": f"bytes */{size}", "Cache-Control": cache_control},
+                )
+            chunk = data[start : end + 1]
+            headers.update(
+                {
+                    "Content-Range": f"bytes {start}-{end}/{size}",
+                    "Content-Length": str(len(chunk)),
+                }
+            )
+            return Response(content=chunk, status_code=206, media_type=content_type, headers=headers)
+
+    headers["Content-Length"] = str(size)
+    return Response(content=data, media_type=content_type, headers=headers)
 
 
 # --- Transcriptions -------------------------------------------------------
@@ -194,6 +254,9 @@ def create_transcription(
     )
     db.commit()
     db.refresh(transcription)
+    # Keep the object's verification_status in step with its transcriptions.
+    cultural_object_service.sync_verification_status(db, obj)
+    db.commit()
     return _hydrate_transcriptions(db, [transcription])[0]
 
 
@@ -219,6 +282,9 @@ def update_transcription(
         )
     db.commit()
     db.refresh(transcription)
+    # Keep the object's verification_status in step with its transcriptions.
+    cultural_object_service.sync_verification_status(db, obj)
+    db.commit()
     return _hydrate_transcriptions(db, [transcription])[0]
 
 
