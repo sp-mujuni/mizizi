@@ -90,12 +90,19 @@ class CulturalObject(Base):
     tags: Mapped[list["CulturalObjectTag"]] = relationship(
         back_populates="cultural_object", cascade="all, delete-orphan"
     )
+    creator_key_escrow: Mapped["CreatorKeyEscrow | None"] = relationship(
+        back_populates="cultural_object", cascade="all, delete-orphan", uselist=False
+    )
+    creator_key_requests: Mapped[list["CreatorKeyRequest"]] = relationship(
+        back_populates="cultural_object", cascade="all, delete-orphan"
+    )
 
 
 from app.models.collection import CollectionItem  # noqa: E402
 from app.models.community import Community  # noqa: E402
 from app.models.consent import Consent  # noqa: E402
 from app.models.contributor import Contributor  # noqa: E402
+from app.models.creator_key import CreatorKeyEscrow, CreatorKeyRequest  # noqa: E402
 from app.models.cultural_context import CulturalContext  # noqa: E402
 from app.models.derivative import Derivative  # noqa: E402
 from app.models.language import Language  # noqa: E402
