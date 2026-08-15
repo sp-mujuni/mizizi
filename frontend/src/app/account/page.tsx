@@ -274,6 +274,7 @@ function ObjectCard({
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmRestrict, setConfirmRestrict] = useState(false);
+  const [keyReq, setKeyReq] = useState<string | null>(null);
   const [draft, setDraft] = useState({
     title: obj.title ?? "",
     description: obj.description ?? "",
@@ -317,12 +318,14 @@ function ObjectCard({
     setBusy(true);
     onError("");
     try {
-      await api.withdraw(obj.id);
+      await api.deleteObject(obj.id);
       setConfirmDelete(false);
-      onNotice(`"${obj.title ?? "Untitled"}" withdrawn. It is no longer listed in the archive.`);
+      onNotice(
+        `"${obj.title ?? "Untitled"}" permanently deleted. The object, its media and its records have been removed from the archive.`
+      );
       onChanged();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not withdraw this object.");
+      onError(err instanceof Error ? err.message : "Could not delete this object.");
     } finally {
       setBusy(false);
     }
@@ -409,6 +412,22 @@ function ObjectCard({
     }
   }
 
+  async function requestKey() {
+    setBusy(true);
+    onError("");
+    try {
+      const req = await api.requestCreatorKey(obj.id);
+      setKeyReq(req.status);
+      onNotice(
+        "Your key request has been sent to the Mizizi Administrator. The key will be emailed to your registered address."
+      );
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not request the creator key.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function addConsent() {
     if (!party.trim()) return;
     setBusy(true);
@@ -465,13 +484,13 @@ function ObjectCard({
               </button>
               {confirmDelete ? (
                 <span className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-1 text-sm">
-                  <span className="text-red-700">Withdraw this object?</span>
+                  <span className="text-red-700">Permanently delete? This cannot be undone.</span>
                   <button
                     onClick={() => void deleteObject()}
                     disabled={busy}
                     className="rounded bg-red-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                   >
-                    Yes
+                    Yes, delete
                   </button>
                   <button
                     onClick={() => setConfirmDelete(false)}
@@ -600,20 +619,42 @@ function ObjectCard({
             ))}
           </div>
           {!perms?.public_access && (
-            <div className="mt-3 flex gap-2">
-              <input
-                value={pubKey}
-                onChange={(e) => setPubKey(e.target.value)}
-                placeholder="Creator key"
-                className="w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-sm"
-              />
-              <button
-                onClick={() => void grantPublic()}
-                disabled={busy}
-                className="shrink-0 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50"
-              >
-                Grant public
-              </button>
+            <div className="mt-3 space-y-2">
+              <div className="flex gap-2">
+                <input
+                  value={pubKey}
+                  onChange={(e) => setPubKey(e.target.value)}
+                  placeholder="Creator key"
+                  className="w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-sm"
+                />
+                <button
+                  onClick={() => void grantPublic()}
+                  disabled={busy}
+                  className="shrink-0 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50"
+                >
+                  Grant public
+                </button>
+              </div>
+              <p className="text-xs text-stone-500">
+                Lost your key? It is stored safely with the Mizizi Administrator.
+              </p>
+              {keyReq ? (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {keyReq === "sent"
+                    ? "Your key has been emailed to your registered address."
+                    : keyReq === "declined"
+                      ? "Your key request was declined by the administrator."
+                      : "Key request submitted. The administrator will email your key to your registered address."}
+                </p>
+              ) : (
+                <button
+                  onClick={() => void requestKey()}
+                  disabled={busy}
+                  className="text-xs font-semibold text-accent hover:underline disabled:opacity-50"
+                >
+                  Request my creator key from the administrator →
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -633,17 +674,17 @@ function ObjectCard({
               <li className="text-xs text-stone-400">No consents recorded yet.</li>
             )}
           </ul>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <input
               value={party}
               onChange={(e) => setParty(e.target.value)}
               placeholder="Consenting party"
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+              className="min-w-0 flex-1 basis-full rounded-lg border border-stone-300 px-3 py-2 text-sm sm:basis-auto"
             />
             <select
               value={consentType}
               onChange={(e) => setConsentType(e.target.value)}
-              className="rounded-lg border border-stone-300 px-2 py-2 text-sm"
+              className="flex-1 rounded-lg border border-stone-300 px-2 py-2 text-sm sm:flex-none"
             >
               {CONSENT_TYPES.map((t) => (
                 <option key={t} value={t}>
