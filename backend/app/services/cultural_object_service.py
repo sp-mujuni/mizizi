@@ -2,7 +2,8 @@
 
 Implements the object lifecycle (draft → processing → review → verified →
 published → restricted/withdrawn/archived) with provenance recorded at every
-step. The original is never overwritten; deletions are soft (withdraw).
+step. The original is never overwritten; routine deletions are soft (withdraw),
+while a creator (or an administrator enforcing policy) may permanently delete.
 """
 
 import hashlib
@@ -14,8 +15,9 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core import access
-from app.models import Community, CulturalObject, Language, Place, Contributor, Permission, ProvenanceEvent, User
-from app.models.enums import ObjectStatus, ProvenanceEventType
+from app.models import Community, CulturalObject, Language, Place, Contributor, Permission, ProvenanceEvent, Transcription, User
+from app.models.creator_key import CreatorKeyEscrow
+from app.models.enums import ObjectStatus, ProvenanceEventType, VerificationStatus
 from app.schemas.cultural_object import (
     CulturalObjectCreate,
     CulturalObjectStatusUpdate,
@@ -93,7 +95,8 @@ def create_cultural_object(
         language_id=payload.original_language_id,
     )
     # A fresh creator credential for this object. The plaintext key is returned
-    # to the creator exactly once; only its hash is stored.
+    # to the creator exactly once AND escrowed with the Mizizi Administrator,
+    # so a lost key can be recovered on request.
     creator_key = secrets.token_urlsafe(24)
     obj = CulturalObject(
         object_code=code,
@@ -116,6 +119,16 @@ def create_cultural_object(
 
     # Default permissions: preservation only, everything else requires consent.
     db.add(Permission(cultural_object_id=obj.id, preservation=True))
+
+    # Escrow the plaintext key with the administrator so it can be recovered.
+    db.add(
+        CreatorKeyEscrow(
+            cultural_object_id=obj.id,
+            user_id=user.id if user else None,
+            key=creator_key,
+        )
+    )
+
     create_provenance_event(
         db,
         obj.id,
@@ -126,7 +139,33 @@ def create_cultural_object(
     )
     db.commit()
     db.refresh(obj)
+    _notify_admins_of_new_object(db, obj, creator_key, user)
     return obj
+
+
+def _notify_admins_of_new_object(db: Session, obj: CulturalObject, creator_key: str, user: User | None) -> None:
+    """Tell the administrators that a new creator key has been escrowed.
+
+    Delivery is best-effort: in development the message is logged to the
+    console, so the flow is observable without an SMTP relay.
+    """
+    from app.core.mail import send_email
+    from app.models import ADMIN
+
+    subject = f"[Mizizi] Creator key escrowed — {obj.object_code}"
+    text = (
+        f"A new Cultural Object has been created and its creator key has been "
+        f"escrowed for safekeeping.\n\n"
+        f"Object:     {obj.object_code}\n"
+        f"Title:      {obj.title or '(untitled)'}\n"
+        f"Creator:    {user.email if user else 'system/seed'}\n"
+        f"Creator key: {creator_key}\n\n"
+        f"The key is also stored in the admin escrow ledger and can be issued "
+        f"to the creator on request."
+    )
+    admins = db.execute(select(User).where(User.role == ADMIN)).scalars().all()
+    for admin in admins:
+        send_email(admin.email, subject, text)
 
 
 def list_cultural_objects(
@@ -227,6 +266,35 @@ def update_cultural_object(
     return get_object_or_404(db, object_id)
 
 
+def sync_verification_status(db: Session, obj: CulturalObject) -> CulturalObject:
+    """Roll the verification state of the object's transcriptions up to the
+    object itself.
+
+    The object-level ``verification_status`` used to stay pinned at
+    ``unverified`` after creation — only the transcription's own status was
+    updated when a human reviewed it, so published objects could still report
+    "unverified". This helper keeps the two in sync, taking the highest
+    verification level seen anywhere on the object. It never downgrades a
+    higher level already set on the object (e.g. ``expert_verified``).
+    """
+    order = [s.value for s in VerificationStatus]
+    current = obj.verification_status or VerificationStatus.UNVERIFIED.value
+    statuses = list(
+        db.execute(
+            select(Transcription.verification_status).where(
+                Transcription.cultural_object_id == obj.id
+            )
+        ).scalars()
+    )
+    highest = max(
+        [current, *statuses],
+        key=lambda v: order.index(v) if v in order else -1,
+    )
+    if highest != current:
+        obj.verification_status = highest
+    return obj
+
+
 def change_status(
     db: Session, object_id: uuid.UUID, payload: CulturalObjectStatusUpdate, actor: str = "system"
 ) -> CulturalObject:
@@ -246,6 +314,11 @@ def change_status(
 
     obj.status = new_status
     obj.version += 1
+
+    # Reaching the review pipeline's end (or the archive) means human
+    # verification has happened — surface it on the object itself.
+    if new_status in {ObjectStatus.VERIFIED.value, ObjectStatus.PUBLISHED.value}:
+        sync_verification_status(db, obj)
 
     event_map = {
         ObjectStatus.PUBLISHED.value: ProvenanceEventType.OBJECT_PUBLISHED,
@@ -269,6 +342,130 @@ def change_status(
 def withdraw_object(db: Session, object_id: uuid.UUID, actor: str = "system") -> CulturalObject:
     """Soft delete — the object is withdrawn and restricted, never destroyed."""
     return change_status(db, object_id, CulturalObjectStatusUpdate(status=ObjectStatus.WITHDRAWN.value), actor=actor)
+
+
+def can_permanently_delete(user: User | None, obj: CulturalObject) -> bool:
+    """Permanent deletion is reserved for the object's own creator and for
+    administrators (who enforce archive policy). Reviewers cannot delete."""
+    if user is None:
+        return False
+    if user.role == "admin":
+        return True
+    return obj.user_id is not None and obj.user_id == user.id
+
+
+def delete_object(db: Session, object_id: uuid.UUID, actor: str = "system", user: User | None = None) -> None:
+    """Permanently delete a Cultural Object and everything attached to it.
+
+    This is the only destructive operation in the archive. The original media
+    bytes are removed from storage, relationships to other objects are broken,
+    and the creator-key escrow for the object is destroyed. It is allowed only
+    for the object's creator or an administrator.
+    """
+    obj = get_object_or_404(db, object_id)
+    if not can_permanently_delete(user, obj):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the object's creator or an administrator can permanently delete an object.",
+        )
+
+    from app.core.storage import get_storage
+    from app.models import CulturalRelationship, CreatorKeyRequest
+
+    # Remove the original media bytes from object storage.
+    storage = get_storage()
+    for asset in obj.media_assets:
+        try:
+            storage.delete(asset.storage_key)
+        except Exception:
+            pass  # a missing blob must not block the deletion
+
+    # Break knowledge-graph edges that reference this object (either direction).
+    for rel in db.execute(
+        select(CulturalRelationship).where(
+            or_(
+                CulturalRelationship.source_object_id == obj.id,
+                CulturalRelationship.target_object_id == obj.id,
+            )
+        )
+    ).scalars():
+        db.delete(rel)
+
+    # Requests referencing the object are dropped (escrow cascades via FK).
+    for req in db.execute(
+        select(CreatorKeyRequest).where(CreatorKeyRequest.cultural_object_id == obj.id)
+    ).scalars():
+        db.delete(req)
+
+    code = obj.object_code
+    db.delete(obj)
+    db.commit()
+    return code
+
+
+# --- Admin queries ---------------------------------------------------------
+
+
+def list_all_users_with_objects(db: Session) -> tuple[list[User], int]:
+    """Every user account, with their objects eagerly loaded, for the admin console."""
+    users = (
+        db.execute(
+            select(User)
+            .options(joinedload(User.cultural_objects))
+            .order_by(User.created_at.asc())
+        )
+        .unique()
+        .scalars()
+        .all()
+    )
+    return list(users), len(users)
+
+
+def list_all_objects(
+    db: Session,
+    *,
+    q: str | None = None,
+    status: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> tuple[list[CulturalObject], int]:
+    """Every Cultural Object in the archive, with its owning account, for moderation."""
+    query = select(CulturalObject).options(joinedload(CulturalObject.creator_user))
+    count_query = select(func.count()).select_from(CulturalObject)
+    if q:
+        like = f"%{q}%"
+        cond = or_(
+            CulturalObject.title.ilike(like),
+            CulturalObject.object_code.ilike(like),
+        )
+        query = query.where(cond)
+        count_query = count_query.where(cond)
+    if status:
+        query = query.where(CulturalObject.status == status)
+        count_query = count_query.where(CulturalObject.status == status)
+    total = db.execute(count_query).scalar() or 0
+    items = (
+        db.execute(query.order_by(CulturalObject.created_at.desc()).limit(limit).offset(offset))
+        .unique()
+        .scalars()
+        .all()
+    )
+    return list(items), total
+
+
+def list_creator_key_escrows(db: Session) -> list[CreatorKeyEscrow]:
+    return list(
+        db.execute(
+            select(CreatorKeyEscrow)
+            .options(
+                joinedload(CreatorKeyEscrow.cultural_object),
+            )
+            .order_by(CreatorKeyEscrow.created_at.desc())
+        )
+        .unique()
+        .scalars()
+        .all()
+    )
 
 
 HUMAN_VERIFIED_STATUSES = {
