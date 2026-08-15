@@ -10,8 +10,10 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.routers import (
+    admin,
     auth,
     collections,
+    creator_keys,
     cultural_object_resources,
     cultural_objects,
     reference,
@@ -47,6 +49,8 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
 api = settings.api_v1_prefix
 
 app.include_router(auth.router, prefix=api)
+app.include_router(admin.router, prefix=api)
+app.include_router(creator_keys.router, prefix=api)
 app.include_router(reference.languages_router, prefix=api)
 app.include_router(reference.communities_router, prefix=api)
 app.include_router(reference.places_router, prefix=api)
