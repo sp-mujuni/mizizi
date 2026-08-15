@@ -168,8 +168,9 @@ export default function RecordPage() {
               {result.creatorKey}
             </p>
             <p className="mt-2 text-xs text-amber-800">
-              Only the holder of this key can grant public access to this story. It is shown
-              once and stored in this browser — copy it somewhere safe.
+              Only the holder of this key can grant public access to this story. A copy is
+              stored safely with the Mizizi Administrator — if you lose this key, you can
+              request it and it will be emailed back to your registered address.
             </p>
           </div>
           <p className="mt-3 text-sm text-stone-500">
