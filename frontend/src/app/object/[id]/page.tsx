@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, API_BASE } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { CulturalObject, PublishCheck } from "@/lib/types";
 
@@ -183,16 +183,18 @@ export default function ObjectPage({ params }: { params: Promise<{ id: string }>
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-stone-500">
             Original recording
           </h2>
-          {original.mime_type?.startsWith("audio") ? (
+          {original.media_type === "audio" ? (
             <audio
               controls
-              src={`${API_BASE}/cultural-objects/${obj.id}/media/${original.id}`}
+              preload="metadata"
+              src={api.mediaUrl(obj.id, original.id)}
               className="w-full"
             />
           ) : (
             <video
               controls
-              src={`${API_BASE}/cultural-objects/${obj.id}/media/${original.id}`}
+              preload="metadata"
+              src={api.mediaUrl(obj.id, original.id)}
               className="w-full rounded-lg"
             />
           )}
