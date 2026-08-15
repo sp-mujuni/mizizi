@@ -237,3 +237,69 @@ export interface RegisterPayload {
   place_ids: string[];
   community_ids: string[];
 }
+
+// --- Admin console --------------------------------------------------------
+
+export interface AdminObject {
+  id: string;
+  object_code: string;
+  object_type: string;
+  title?: string | null;
+  status: string;
+  visibility: string;
+  verification_status: string;
+  created_at: string;
+  user_id?: string | null;
+  user_email?: string | null;
+  user_display_name?: string | null;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  display_name?: string | null;
+  role: string;
+  created_at: string;
+  object_count: number;
+  objects: AdminObject[];
+}
+
+export interface AdminUserList {
+  items: AdminUser[];
+  total: number;
+}
+
+export interface AdminObjectList {
+  items: AdminObject[];
+  total: number;
+}
+
+export interface CreatorKey {
+  id: string;
+  cultural_object_id: string;
+  object_code: string;
+  object_title?: string | null;
+  user_id?: string | null;
+  user_email?: string | null;
+  key: string;
+  last_issued_at?: string | null;
+  created_at: string;
+}
+
+export interface CreatorKeyRequest {
+  id: string;
+  user_id: string;
+  user_email: string;
+  cultural_object_id: string;
+  object_code: string;
+  object_title?: string | null;
+  status: "pending" | "sent" | "declined" | string;
+  decided_at?: string | null;
+  created_at: string;
+}
+
+export interface DeleteResponse {
+  ok: boolean;
+  detail: string;
+  object_id?: string | null;
+}
