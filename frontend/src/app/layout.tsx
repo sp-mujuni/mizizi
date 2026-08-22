@@ -9,9 +9,9 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Mizizi — The Living Memory of Africa",
+  title: "Mizizi — The Living Memory of Uganda",
   description:
-    "So the stories don't disappear. An AI-powered living archive for African oral culture.",
+    "So the stories don't disappear. An AI-powered living archive for Ugandan oral culture.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -23,7 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main className="flex-1">{children}</main>
         </AuthProvider>
         <footer className="border-t border-stone-200 bg-white/60 py-8 text-center text-sm text-stone-500">
-          <p className="font-medium text-stone-700">Mizizi — The Living Memory of Africa</p>
+          <p className="font-medium text-stone-700">Mizizi — The Living Memory of Uganda</p>
           <p className="mt-1 italic">&ldquo;No generation should be the last generation to remember a story.&rdquo;</p>
           <nav className="mt-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-stone-500">
             <Link href="/terms" className="hover:text-brand-dark hover:underline">
