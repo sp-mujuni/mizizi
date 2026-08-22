@@ -21,7 +21,7 @@ export default function HomePage() {
             What did your grandmother tell you?
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-stone-600">
-            Preserve the stories, songs, riddles and proverbs of African oral culture —
+            Preserve the stories, songs, riddles and proverbs of Ugandan oral culture —
             the original recordings, never altered — so the next generation can still hear them.
           </p>
           <div className="mt-10 flex w-full flex-col items-stretch justify-center gap-3 sm:w-auto sm:flex-row sm:items-center">
