@@ -62,7 +62,7 @@ export default function HomePage() {
         ) : (
           <p className="text-stone-500">
             {archive === null
-              ? "The archive is still growing. Check the API at 127.0.0.1:8000 to seed it."
+              ? "The archive is still growing..."
               : "Loading..."}
           </p>
         )}
