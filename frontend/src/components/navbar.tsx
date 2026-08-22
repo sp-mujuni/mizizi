@@ -44,7 +44,7 @@ export default function Navbar() {
           <span className="text-lg font-bold tracking-tight text-brand-dark">
             Mizizi
             <span className="ml-1 hidden text-xs font-normal text-stone-500 sm:inline">
-              The Living Memory of Africa
+              The Living Memory of Uganda
             </span>
           </span>
         </Link>
