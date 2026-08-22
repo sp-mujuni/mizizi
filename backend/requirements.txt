@@ -5,7 +5,7 @@ python-multipart>=0.0.20
 
 # --- Database ---
 sqlalchemy>=2.0.36
-psycopg2
+psycopg2-binary>=2.9.10
 alembic>=1.14
 pgvector>=0.3.6
 
